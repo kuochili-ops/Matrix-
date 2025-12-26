@@ -1,25 +1,231 @@
-<script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Matrix AR - Unified Green</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@900&display=swap" rel="stylesheet">
+    <style>
+        body { margin: 0; background: #000; overflow: hidden; touch-action: none; font-family: sans-serif; height: 100vh; }
+        #media-bg { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; display: flex; align-items: center; justify-content: center; background: #000; }
+        #bg-video { width: 100%; height: 100%; object-fit: cover; display: none; }
+        #canvas-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; }
+        
+        #app-ui { 
+            position: absolute; bottom: 0; left: 0; width: 100%; z-index: 100; 
+            background: rgba(0,0,0,0.85); backdrop-filter: blur(20px); 
+            border-top: 2px solid #00ff41; padding-bottom: env(safe-area-inset-bottom);
+            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        #app-ui.hidden { transform: translateY(100%); }
 
-<a-scene embedded arjs>
-  <a-entity id="matrix-rain" position="0 0 -3"></a-entity>
-  
-  <a-camera-static />
-</a-scene>
+        .ui-content { padding: 12px 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+        .ui-row { width: 92%; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+        label { color: #00ff41; font-size: 9px; font-weight: bold; }
+        .btn { flex: 1; height: 38px; background: #111; border: 1px solid #00ff41; border-radius: 6px; color: #00ff41; font-weight: bold; font-size: 11px; cursor: pointer; }
+        input[type="text"] { background: #000; border: 1px solid #00ff41; color: #fff; padding: 8px; border-radius: 6px; flex: 1.2; font-size: 14px; outline: none; }
+        #decodeMessageInput { border-color: #ff4141; color: #ffcccc; }
+        .control-group { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+        input[type="range"] { width: 100%; accent-color: #00ff41; }
+    </style>
+</head>
+<body onclick="showUI()">
 
-<script>
-  // 網頁版 FlipBoard 邏輯
-  const charSet = "田中大一水火木金土上下左右";
-  const rainContainer = document.querySelector('#matrix-rain');
+<div id="media-bg"><video id="bg-video" autoplay playsinline muted></video></div>
+<div id="canvas-container"></div>
 
-  function createDrop() {
-    const el = document.createElement('a-text');
-    el.setAttribute('value', charSet[Math.floor(Math.random()*charSet.length)]);
-    el.setAttribute('color', '#00FF41');
-    el.setAttribute('position', {x: (Math.random()-0.5)*10, y: 5, z: 0});
-    
-    // 網頁動畫：垂直掉落
-    el.setAttribute('animation', 'property: position; to: 0 -5 0; dur: 3000; easing: linear; loop: true');
-    
-    rainContainer.appendChild(el);
-  }
+<div id="app-ui">
+    <div class="ui-content">
+        <div class="ui-row">
+            <input type="text" id="textInput" value="層次矩陣">
+            <button class="btn" id="fullScreenBtn">🔲 全螢幕</button>
+            <button class="btn" id="camBtn">📷 相機</button>
+        </div>
+        <div class="ui-row">
+            <input type="text" id="decodeMessageInput" value="郭白六是可愛的小朋友">
+            <button class="btn" id="setDecodeBtn" style="border-color:#ff4141; color:#ff4141;">設定訊息</button>
+        </div>
+        <div class="ui-row">
+            <div class="control-group">
+                <label>MID ROWS 行數 (<span id="rowVal">12</span>)</label>
+                <input type="range" id="rowSlider" min="4" max="24" step="2" value="12">
+            </div>
+            <div class="control-group">
+                <label>BASE SPEED 速度</label>
+                <input type="range" id="speedSlider" min="1" max="10" step="0.5" value="4">
+            </div>
+        </div>
+    </div>
+</div>
+
+<script type="importmap"> { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } } </script>
+
+<script type="module">
+    import * as THREE from 'three';
+
+    class MatrixCrackerApp {
+        constructor() {
+            this.scene = new THREE.Scene();
+            this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 5000);
+            this.params = { 
+                speed: 4.0, midRows: 12,
+                decodeMessage: "郭白六是可愛的小朋友",
+                decodeIdx: 0,
+                lastDecodeTime: 0,
+                decodeInterval: 200, // 0.2秒一次
+                matrixChars: "虚実数解空間01ホUNKOWN"
+            };
+            this.charGroups = [];
+            this.init();
+        }
+
+        init() {
+            this.renderer.setSize(window.innerWidth, window.innerHeight);
+            this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            document.getElementById('canvas-container').appendChild(this.renderer.domElement);
+            this.camera.position.set(0, 0, 1000);
+            this._bindUI();
+            this.updateText();
+            this._renderLoop();
+        }
+
+        _bindUI() {
+            const get = (id) => document.getElementById(id);
+            get('textInput').oninput = () => this.updateText();
+            get('speedSlider').oninput = (e) => this.params.speed = parseFloat(e.target.value);
+            get('rowSlider').oninput = (e) => { 
+                this.params.midRows = parseInt(e.target.value); 
+                get('rowVal').innerText = this.params.midRows;
+                this.updateText(); 
+            };
+            get('setDecodeBtn').onclick = (e) => {
+                e.stopPropagation();
+                this.params.decodeMessage = get('decodeMessageInput').value;
+                this.params.decodeIdx = 0;
+            };
+            get('camBtn').onclick = (e) => { e.stopPropagation(); this.startCamera(); };
+            get('fullScreenBtn').onclick = (e) => {
+                e.stopPropagation();
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen();
+                    get('app-ui').classList.add('hidden');
+                }
+            };
+        }
+
+        _createCharTexture(char, layerName, isDecoding = false) {
+            const canvas = document.createElement('canvas'); canvas.width = 512; canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+            ctx.font = '900 400px "Noto Sans TC"';
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            
+            // 修改點：前層現在預設也是綠色，只有 isDecoding 為 true 時才變紅
+            ctx.shadowColor = isDecoding ? "#ff0000" : "#00ff41";
+            ctx.shadowBlur = layerName === 'near' ? 30 : 15;
+            
+            // 文字顏色設定
+            if (isDecoding) {
+                ctx.fillStyle = "#ff4444";
+            } else {
+                // 前層綠色螢光化，中後層維持原樣
+                ctx.fillStyle = layerName === 'near' ? "#ccffdd" : "#00ff41"; 
+            }
+            
+            ctx.fillText(char, 256, 256);
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        updateText() {
+            this.charGroups.forEach(g => {
+                g.children.forEach(m => m.material.map.dispose());
+                this.scene.remove(g);
+            });
+            this.charGroups = [];
+            
+            const inputText = (document.getElementById('textInput').value || " ").split('');
+            const layers = [
+                { name: 'far',  z: -600, size: 50,  speed: 0.5, rowMult: 2.0 },
+                { name: 'mid',  z: 0,    size: 80,  speed: 1.0, rowMult: 1.0 },
+                { name: 'near', z: 400,  size: 110, speed: 1.8, rowMult: 0.5 }
+            ];
+
+            layers.forEach(layer => {
+                const finalRows = Math.max(1, Math.floor(this.params.midRows * layer.rowMult));
+                for (let r = 0; r < finalRows; r++) {
+                    inputText.forEach((char, i) => {
+                        const g = new THREE.Group();
+                        const tex = this._createCharTexture(char, layer.name, false);
+                        const m = new THREE.Mesh(new THREE.PlaneGeometry(layer.size, layer.size), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
+                        g.add(m);
+
+                        g.userData = { 
+                            layer, randOffset: Math.random() * 20000, 
+                            speedVar: 0.8 + Math.random() * 0.4,
+                            isDecoding: false, charIdx: i
+                        };
+                        
+                        const xSpread = layer.name === 'near' ? 250 : (layer.name === 'mid' ? 160 : 90);
+                        g.position.set((r - (finalRows - 1) / 2) * xSpread, 2000, layer.z);
+                        this.scene.add(g);
+                        this.charGroups.push(g);
+                    });
+                }
+            });
+        }
+
+        _animateText() {
+            const now = Date.now();
+            const time = now * 0.001 * this.params.speed;
+
+            if (now - this.params.lastDecodeTime > this.params.decodeInterval) {
+                const candidates = this.charGroups.filter(g => 
+                    !g.userData.isDecoding && 
+                    g.position.y < 800 && g.position.y > -800 &&
+                    (g.userData.layer.name !== 'far')
+                );
+
+                if (candidates.length > 0 && this.params.decodeMessage.length > 0) {
+                    const target = candidates[Math.floor(Math.random() * candidates.length)];
+                    const decodeChar = this.params.decodeMessage[this.params.decodeIdx];
+                    
+                    target.children[0].material.map.dispose();
+                    target.children[0].material.map = this._createCharTexture(decodeChar, target.userData.layer.name, true);
+                    target.userData.isDecoding = true;
+                    
+                    this.params.decodeIdx = (this.params.decodeIdx + 1) % this.params.decodeMessage.length;
+                    this.params.lastDecodeTime = now;
+                }
+            }
+
+            this.charGroups.forEach((g) => {
+                const { layer, randOffset, speedVar, charIdx } = g.userData;
+                let progress = (time * layer.speed * speedVar + randOffset * 0.001) % 6.0;
+                g.position.y = 1500 - (progress * 600) - (charIdx * layer.size * 1.5);
+
+                if (g.position.y < -1000 && g.userData.isDecoding) {
+                    g.userData.isDecoding = false;
+                    const rc = this.params.matrixChars[Math.floor(Math.random() * this.params.matrixChars.length)];
+                    g.children[0].material.map = this._createCharTexture(rc, layer.name, false);
+                }
+            });
+        }
+
+        _renderLoop() {
+            this._animateText();
+            this.renderer.render(this.scene, this.camera);
+            requestAnimationFrame(() => this._renderLoop());
+        }
+
+        async startCamera() {
+            const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+            document.getElementById('bg-video').srcObject = s;
+            document.getElementById('bg-video').style.display = 'block';
+        }
+    }
+
+    new MatrixCrackerApp();
+    window.showUI = () => document.getElementById('app-ui').classList.remove('hidden');
 </script>
+</body>
+</html>
