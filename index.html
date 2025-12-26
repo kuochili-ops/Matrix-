@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Matrix AR - Fullscreen Fix</title>
+    <title>Matrix AR - Ultimate Fullscreen</title>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@900&display=swap" rel="stylesheet">
     <style>
         body { margin: 0; background: #000; overflow: hidden; touch-action: none; font-family: sans-serif; height: 100vh; width: 100vw; }
@@ -11,7 +11,6 @@
         #bg-video { width: 100%; height: 100%; object-fit: cover; display: none; }
         #canvas-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; }
         
-        /* UI 面板 */
         #app-ui { 
             position: absolute; bottom: 0; left: 0; width: 100%; z-index: 100; 
             background: rgba(0,0,0,0.85); backdrop-filter: blur(20px); 
@@ -29,15 +28,12 @@
         #decodeMessageInput { border-color: #ff4141; color: #ffcccc; }
         .control-group { flex: 1; display: flex; flex-direction: column; gap: 2px; }
         input[type="range"] { width: 100%; accent-color: #00ff41; }
-
-        /* 隱藏全螢幕時的狀態列 (Android) */
-        ::backdrop { background-color: rgba(0,0,0,0); }
     </style>
 </head>
 <body>
 
 <div id="media-bg"><video id="bg-video" autoplay playsinline muted></video></div>
-<div id="canvas-container" onclick="handleCanvasClick(event)"></div>
+<div id="canvas-container"></div>
 
 <div id="app-ui">
     <div class="ui-content">
@@ -119,25 +115,39 @@
             };
             get('camBtn').onclick = (e) => { e.stopPropagation(); this.startCamera(); };
             
-            // 全螢幕按鈕修正
-            get('fullScreenBtn').onclick = (e) => {
+            // 全螢幕按鈕 核心邏輯
+            get('fullScreenBtn').addEventListener('click', (e) => {
                 e.stopPropagation();
-                this.toggleFullScreen();
-                ui.classList.add('hidden'); // 進入全螢幕時自動隱藏
-            };
+                this.requestFull();
+                ui.classList.add('hidden');
+            });
+
+            // 畫布點擊事件
+            document.getElementById('canvas-container').addEventListener('click', (e) => {
+                if (ui.classList.contains('hidden')) {
+                    ui.classList.remove('hidden');
+                } else {
+                    if (e.clientY < window.innerHeight * 0.6) {
+                        ui.classList.add('hidden');
+                    }
+                }
+            });
         }
 
-        toggleFullScreen() {
-            const doc = window.document;
-            const docEl = doc.documentElement;
-
-            const requestFullScreen = docEl.requestFullscreen || docEl.mozRequestFullScreen || docEl.webkitRequestFullScreen || docEl.msRequestFullscreen;
-            const cancelFullScreen = doc.exitFullscreen || doc.mozCancelFullScreen || doc.webkitExitFullscreen || doc.msExitFullscreen;
-
-            if (!doc.fullscreenElement && !doc.mozFullScreenElement && !doc.webkitFullscreenElement && !doc.msFullscreenElement) {
-                requestFullScreen.call(docEl);
+        requestFull() {
+            const el = document.documentElement;
+            // 嘗試所有可能的前綴
+            const rfs = el.requestFullscreen || el.webkitRequestFullScreen || el.mozRequestFullScreen || el.msRequestFullscreen;
+            
+            if (rfs) {
+                rfs.call(el).catch(err => {
+                    console.error("全螢幕請求失敗:", err);
+                    // 針對 iOS 的備用方案：如果無法進入全螢幕，至少隱藏 UI
+                    document.getElementById('app-ui').classList.add('hidden');
+                });
             } else {
-                cancelFullScreen.call(doc);
+                // 如果完全不支援 API (如部分 iPhone 瀏覽器)，則僅執行隱藏 UI
+                document.getElementById('app-ui').classList.add('hidden');
             }
         }
 
@@ -157,7 +167,11 @@
 
         updateText() {
             this.charGroups.forEach(g => {
-                g.children.forEach(m => m.material.map.dispose());
+                g.children.forEach(m => {
+                    if(m.material.map) m.material.map.dispose();
+                    m.geometry.dispose();
+                    m.material.dispose();
+                });
                 this.scene.remove(g);
             });
             this.charGroups = [];
@@ -232,25 +246,11 @@
                 const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
                 const v = document.getElementById('bg-video');
                 v.srcObject = s; v.style.display = 'block';
-            } catch(e) { alert("無法開啟相機"); }
+            } catch(e) { alert("請確保在 HTTPS 環境下開啟相機。"); }
         }
     }
 
-    const app = new MatrixCrackerApp();
-
-    // 點擊事件：點擊螢幕上半部顯示 UI
-    window.handleCanvasClick = (e) => {
-        const ui = document.getElementById('app-ui');
-        // 如果面板隱藏中，點擊任何地方都顯示
-        if (ui.classList.contains('hidden')) {
-            ui.classList.remove('hidden');
-        } else {
-            // 如果面板已顯示，點擊畫面上半部隱藏面板 (避免誤觸滑桿)
-            if (e.clientY < window.innerHeight * 0.5) {
-                ui.classList.add('hidden');
-            }
-        }
-    };
+    new MatrixCrackerApp();
 </script>
 </body>
 </html>
