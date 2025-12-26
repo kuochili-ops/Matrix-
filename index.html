@@ -3,47 +3,52 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Matrix AR - Unified Green</title>
+    <title>Matrix AR - Fullscreen Fix</title>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@900&display=swap" rel="stylesheet">
     <style>
-        body { margin: 0; background: #000; overflow: hidden; touch-action: none; font-family: sans-serif; height: 100vh; }
-        #media-bg { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; display: flex; align-items: center; justify-content: center; background: #000; }
+        body { margin: 0; background: #000; overflow: hidden; touch-action: none; font-family: sans-serif; height: 100vh; width: 100vw; }
+        #media-bg { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; background: #000; }
         #bg-video { width: 100%; height: 100%; object-fit: cover; display: none; }
         #canvas-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; }
         
+        /* UI 面板 */
         #app-ui { 
             position: absolute; bottom: 0; left: 0; width: 100%; z-index: 100; 
             background: rgba(0,0,0,0.85); backdrop-filter: blur(20px); 
             border-top: 2px solid #00ff41; padding-bottom: env(safe-area-inset-bottom);
-            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: transform 0.4s ease-out;
+            pointer-events: auto;
         }
-        #app-ui.hidden { transform: translateY(100%); }
+        #app-ui.hidden { transform: translateY(105%); }
 
         .ui-content { padding: 12px 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
         .ui-row { width: 92%; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
         label { color: #00ff41; font-size: 9px; font-weight: bold; }
-        .btn { flex: 1; height: 38px; background: #111; border: 1px solid #00ff41; border-radius: 6px; color: #00ff41; font-weight: bold; font-size: 11px; cursor: pointer; }
+        .btn { flex: 1; height: 40px; background: #111; border: 1px solid #00ff41; border-radius: 6px; color: #00ff41; font-weight: bold; font-size: 11px; }
         input[type="text"] { background: #000; border: 1px solid #00ff41; color: #fff; padding: 8px; border-radius: 6px; flex: 1.2; font-size: 14px; outline: none; }
         #decodeMessageInput { border-color: #ff4141; color: #ffcccc; }
         .control-group { flex: 1; display: flex; flex-direction: column; gap: 2px; }
         input[type="range"] { width: 100%; accent-color: #00ff41; }
+
+        /* 隱藏全螢幕時的狀態列 (Android) */
+        ::backdrop { background-color: rgba(0,0,0,0); }
     </style>
 </head>
-<body onclick="showUI()">
+<body>
 
 <div id="media-bg"><video id="bg-video" autoplay playsinline muted></video></div>
-<div id="canvas-container"></div>
+<div id="canvas-container" onclick="handleCanvasClick(event)"></div>
 
 <div id="app-ui">
     <div class="ui-content">
         <div class="ui-row">
             <input type="text" id="textInput" value="層次矩陣">
-            <button class="btn" id="fullScreenBtn">🔲 全螢幕</button>
+            <button class="btn" id="fullScreenBtn">🔲 進入全螢幕</button>
             <button class="btn" id="camBtn">📷 相機</button>
         </div>
         <div class="ui-row">
             <input type="text" id="decodeMessageInput" value="郭白六是可愛的小朋友">
-            <button class="btn" id="setDecodeBtn" style="border-color:#ff4141; color:#ff4141;">設定訊息</button>
+            <button class="btn" id="setDecodeBtn" style="border-color:#ff4141; color:#ff4141;">開始破解</button>
         </div>
         <div class="ui-row">
             <div class="control-group">
@@ -73,7 +78,7 @@
                 decodeMessage: "郭白六是可愛的小朋友",
                 decodeIdx: 0,
                 lastDecodeTime: 0,
-                decodeInterval: 200, // 0.2秒一次
+                decodeInterval: 200,
                 matrixChars: "虚実数解空間01ホUNKOWN"
             };
             this.charGroups = [];
@@ -88,10 +93,18 @@
             this._bindUI();
             this.updateText();
             this._renderLoop();
+            
+            window.addEventListener('resize', () => {
+                this.camera.aspect = window.innerWidth / window.innerHeight;
+                this.camera.updateProjectionMatrix();
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+            });
         }
 
         _bindUI() {
             const get = (id) => document.getElementById(id);
+            const ui = get('app-ui');
+
             get('textInput').oninput = () => this.updateText();
             get('speedSlider').oninput = (e) => this.params.speed = parseFloat(e.target.value);
             get('rowSlider').oninput = (e) => { 
@@ -105,13 +118,27 @@
                 this.params.decodeIdx = 0;
             };
             get('camBtn').onclick = (e) => { e.stopPropagation(); this.startCamera(); };
+            
+            // 全螢幕按鈕修正
             get('fullScreenBtn').onclick = (e) => {
                 e.stopPropagation();
-                if (!document.fullscreenElement) {
-                    document.documentElement.requestFullscreen();
-                    get('app-ui').classList.add('hidden');
-                }
+                this.toggleFullScreen();
+                ui.classList.add('hidden'); // 進入全螢幕時自動隱藏
             };
+        }
+
+        toggleFullScreen() {
+            const doc = window.document;
+            const docEl = doc.documentElement;
+
+            const requestFullScreen = docEl.requestFullscreen || docEl.mozRequestFullScreen || docEl.webkitRequestFullScreen || docEl.msRequestFullscreen;
+            const cancelFullScreen = doc.exitFullscreen || doc.mozCancelFullScreen || doc.webkitExitFullscreen || doc.msExitFullscreen;
+
+            if (!doc.fullscreenElement && !doc.mozFullScreenElement && !doc.webkitFullscreenElement && !doc.msFullscreenElement) {
+                requestFullScreen.call(docEl);
+            } else {
+                cancelFullScreen.call(doc);
+            }
         }
 
         _createCharTexture(char, layerName, isDecoding = false) {
@@ -120,17 +147,9 @@
             ctx.font = '900 400px "Noto Sans TC"';
             ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
             
-            // 修改點：前層現在預設也是綠色，只有 isDecoding 為 true 時才變紅
             ctx.shadowColor = isDecoding ? "#ff0000" : "#00ff41";
             ctx.shadowBlur = layerName === 'near' ? 30 : 15;
-            
-            // 文字顏色設定
-            if (isDecoding) {
-                ctx.fillStyle = "#ff4444";
-            } else {
-                // 前層綠色螢光化，中後層維持原樣
-                ctx.fillStyle = layerName === 'near' ? "#ccffdd" : "#00ff41"; 
-            }
+            ctx.fillStyle = isDecoding ? "#ff4444" : (layerName === 'near' ? "#ccffdd" : "#00ff41"); 
             
             ctx.fillText(char, 256, 256);
             return new THREE.CanvasTexture(canvas);
@@ -143,7 +162,6 @@
             });
             this.charGroups = [];
             
-            const inputText = (document.getElementById('textInput').value || " ").split('');
             const layers = [
                 { name: 'far',  z: -600, size: 50,  speed: 0.5, rowMult: 2.0 },
                 { name: 'mid',  z: 0,    size: 80,  speed: 1.0, rowMult: 1.0 },
@@ -153,23 +171,22 @@
             layers.forEach(layer => {
                 const finalRows = Math.max(1, Math.floor(this.params.midRows * layer.rowMult));
                 for (let r = 0; r < finalRows; r++) {
-                    inputText.forEach((char, i) => {
-                        const g = new THREE.Group();
-                        const tex = this._createCharTexture(char, layer.name, false);
-                        const m = new THREE.Mesh(new THREE.PlaneGeometry(layer.size, layer.size), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
-                        g.add(m);
+                    const g = new THREE.Group();
+                    const rc = this.params.matrixChars[Math.floor(Math.random() * this.params.matrixChars.length)];
+                    const tex = this._createCharTexture(rc, layer.name, false);
+                    const m = new THREE.Mesh(new THREE.PlaneGeometry(layer.size, layer.size), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
+                    g.add(m);
 
-                        g.userData = { 
-                            layer, randOffset: Math.random() * 20000, 
-                            speedVar: 0.8 + Math.random() * 0.4,
-                            isDecoding: false, charIdx: i
-                        };
-                        
-                        const xSpread = layer.name === 'near' ? 250 : (layer.name === 'mid' ? 160 : 90);
-                        g.position.set((r - (finalRows - 1) / 2) * xSpread, 2000, layer.z);
-                        this.scene.add(g);
-                        this.charGroups.push(g);
-                    });
+                    g.userData = { 
+                        layer, randOffset: Math.random() * 20000, 
+                        speedVar: 0.8 + Math.random() * 0.4,
+                        isDecoding: false
+                    };
+                    
+                    const xSpread = layer.name === 'near' ? 250 : (layer.name === 'mid' ? 160 : 90);
+                    g.position.set((r - (finalRows - 1) / 2) * xSpread, 2000, layer.z);
+                    this.scene.add(g);
+                    this.charGroups.push(g);
                 }
             });
         }
@@ -179,29 +196,22 @@
             const time = now * 0.001 * this.params.speed;
 
             if (now - this.params.lastDecodeTime > this.params.decodeInterval) {
-                const candidates = this.charGroups.filter(g => 
-                    !g.userData.isDecoding && 
-                    g.position.y < 800 && g.position.y > -800 &&
-                    (g.userData.layer.name !== 'far')
-                );
-
+                const candidates = this.charGroups.filter(g => !g.userData.isDecoding && g.position.y < 800 && g.position.y > -800 && g.userData.layer.name !== 'far');
                 if (candidates.length > 0 && this.params.decodeMessage.length > 0) {
                     const target = candidates[Math.floor(Math.random() * candidates.length)];
                     const decodeChar = this.params.decodeMessage[this.params.decodeIdx];
-                    
                     target.children[0].material.map.dispose();
                     target.children[0].material.map = this._createCharTexture(decodeChar, target.userData.layer.name, true);
                     target.userData.isDecoding = true;
-                    
                     this.params.decodeIdx = (this.params.decodeIdx + 1) % this.params.decodeMessage.length;
                     this.params.lastDecodeTime = now;
                 }
             }
 
             this.charGroups.forEach((g) => {
-                const { layer, randOffset, speedVar, charIdx } = g.userData;
+                const { layer, randOffset, speedVar } = g.userData;
                 let progress = (time * layer.speed * speedVar + randOffset * 0.001) % 6.0;
-                g.position.y = 1500 - (progress * 600) - (charIdx * layer.size * 1.5);
+                g.position.y = 1500 - (progress * 600);
 
                 if (g.position.y < -1000 && g.userData.isDecoding) {
                     g.userData.isDecoding = false;
@@ -218,14 +228,29 @@
         }
 
         async startCamera() {
-            const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-            document.getElementById('bg-video').srcObject = s;
-            document.getElementById('bg-video').style.display = 'block';
+            try {
+                const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+                const v = document.getElementById('bg-video');
+                v.srcObject = s; v.style.display = 'block';
+            } catch(e) { alert("無法開啟相機"); }
         }
     }
 
-    new MatrixCrackerApp();
-    window.showUI = () => document.getElementById('app-ui').classList.remove('hidden');
+    const app = new MatrixCrackerApp();
+
+    // 點擊事件：點擊螢幕上半部顯示 UI
+    window.handleCanvasClick = (e) => {
+        const ui = document.getElementById('app-ui');
+        // 如果面板隱藏中，點擊任何地方都顯示
+        if (ui.classList.contains('hidden')) {
+            ui.classList.remove('hidden');
+        } else {
+            // 如果面板已顯示，點擊畫面上半部隱藏面板 (避免誤觸滑桿)
+            if (e.clientY < window.innerHeight * 0.5) {
+                ui.classList.add('hidden');
+            }
+        }
+    };
 </script>
 </body>
 </html>
