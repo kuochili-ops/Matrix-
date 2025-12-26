@@ -3,32 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Matrix AR - Visual Fix</title>
+    <title>Matrix AR Cracker</title>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@900&display=swap" rel="stylesheet">
     <style>
         body { margin: 0; background: #000; overflow: hidden; touch-action: none; font-family: sans-serif; height: 100vh; }
         #media-bg { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
         #bg-video { width: 100%; height: 100%; object-fit: cover; display: none; }
         #canvas-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; }
-        
         #app-ui { 
             position: absolute; bottom: 0; left: 0; width: 100%; z-index: 100; 
-            background: rgba(0,0,0,0.8); backdrop-filter: blur(15px); 
+            background: rgba(0,0,0,0.85); backdrop-filter: blur(15px); 
             border-top: 1px solid #0f4; padding-bottom: env(safe-area-inset-bottom);
             transition: transform 0.3s ease;
         }
         #app-ui.hidden { transform: translateY(110%); }
-
         .ui-content { padding: 15px 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
         .ui-row { width: 90%; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-        .btn { flex: 1; height: 40px; background: #111; border: 1px solid #0f4; border-radius: 4px; color: #0f4; font-weight: bold; font-size: 11px; }
-        input[type="text"] { background: #000; border: 1px solid #0f4; color: #fff; padding: 8px; border-radius: 4px; flex: 1.2; font-size: 14px; }
-        #decodeMessageInput { border-color: #f44; color: #fcc; }
+        .btn { flex: 1; height: 44px; background: #111; border: 1px solid #0f4; border-radius: 6px; color: #0f4; font-weight: bold; font-size: 12px; }
+        input[type="text"] { background: #000; border: 1px solid #f44; color: #fff; padding: 10px; border-radius: 6px; flex: 1; font-size: 16px; outline: none; }
         .control-group { flex: 1; display: flex; flex-direction: column; }
         label { color: #0f4; font-size: 9px; font-weight: bold; margin-bottom: 2px; }
         input[type="range"] { width: 100%; accent-color: #0f4; }
-        
-        /* 透明遮罩用於喚醒 UI */
         #touch-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 50; }
     </style>
 </head>
@@ -41,22 +36,15 @@
 <div id="app-ui">
     <div class="ui-content">
         <div class="ui-row">
-            <input type="text" id="textInput" value="層次矩陣">
+            <input type="text" id="decodeInput" value="郭白六是可愛的小朋友">
+            <button class="btn" id="decodeBtn" style="border-color:#f44; color:#f44; flex: 0.4;">⚡ 破解</button>
+        </div>
+        <div class="ui-row">
             <button class="btn" id="fullScreenBtn">🔲 隱藏介面</button>
             <button class="btn" id="camBtn">📷 鏡頭</button>
-        </div>
-        <div class="ui-row">
-            <input type="text" id="decodeMessageInput" value="郭白六是可愛的小朋友">
-            <button class="btn" id="setDecodeBtn" style="border-color:#f44; color:#f44;">破解</button>
-        </div>
-        <div class="ui-row">
             <div class="control-group">
                 <label>Rows: <span id="rowVal">12</span></label>
                 <input type="range" id="rowSlider" min="4" max="60" step="2" value="12">
-            </div>
-            <div class="control-group">
-                <label>Speed</label>
-                <input type="range" id="speedSlider" min="1" max="10" step="0.5" value="4">
             </div>
         </div>
     </div>
@@ -67,7 +55,7 @@
 <script type="module">
     import * as THREE from 'three';
 
-    class MatrixARModule {
+    class MatrixCracker {
         constructor() {
             this.scene = new THREE.Scene();
             this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -78,11 +66,18 @@
             this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 5000);
             this.camera.position.z = 1000;
             
-            this.params = { speed: 4, midRows: 12, decodeMessage: "郭白六是可愛的小朋友", decodeIdx: 0, lastDecodeTime: 0, decodeInterval: 200, chars: "虚実数解空間01ホUNKOWN" };
+            this.params = { 
+                speed: 4, 
+                midRows: 12, 
+                decodeMsg: "", 
+                decodeIdx: -1, // -1 表示未開始解碼
+                lastDecodeTime: 0, 
+                chars: "虚実数解空間01ホUNKOWN" 
+            };
             this.charGroups = [];
             
-            this._bindUI();
-            this.updateText();
+            this._initUI();
+            this.updateRows();
             this._animate();
             window.addEventListener('resize', () => this.onResize());
         }
@@ -91,33 +86,29 @@
             this.renderer.setSize(window.innerWidth, window.innerHeight);
             this.camera.aspect = window.innerWidth / window.innerHeight;
             this.camera.updateProjectionMatrix();
-            this.updateText();
+            this.updateRows();
         }
 
-        _bindUI() {
+        _initUI() {
             const get = (id) => document.getElementById(id);
             const ui = get('app-ui');
 
             get('rowSlider').oninput = (e) => { 
                 this.params.midRows = parseInt(e.target.value); 
                 get('rowVal').innerText = this.params.midRows;
-                this.updateText(); 
+                this.updateRows(); 
             };
-            get('speedSlider').oninput = (e) => this.params.speed = parseFloat(e.target.value);
-            get('textInput').oninput = () => this.updateText();
-            get('setDecodeBtn').onclick = () => { this.params.decodeIdx = 0; this.params.decodeMessage = get('decodeMessageInput').value; };
-            get('camBtn').onclick = () => this.startCamera();
             
-            get('fullScreenBtn').onclick = () => {
-                const el = document.documentElement;
-                const rfs = el.requestFullscreen || el.webkitRequestFullScreen;
-                if(rfs) rfs.call(el).catch(()=>{});
-                ui.classList.add('hidden');
+            get('decodeBtn').onclick = () => {
+                this.params.decodeMsg = get('decodeInput').value;
+                this.params.decodeIdx = 0; // 開始解碼流程
             };
 
+            get('camBtn').onclick = () => this.startCam();
+            get('fullScreenBtn').onclick = () => { ui.classList.add('hidden'); };
             get('touch-overlay').onclick = (e) => {
                 if (ui.classList.contains('hidden')) ui.classList.remove('hidden');
-                else if (e.clientY < window.innerHeight * 0.6) ui.classList.add('hidden');
+                else if (e.clientY < window.innerHeight * 0.5) ui.classList.add('hidden');
             };
         }
 
@@ -132,12 +123,13 @@
             return new THREE.CanvasTexture(canvas);
         }
 
-        updateText() {
+        updateRows() {
             this.charGroups.forEach(g => {
                 g.children[0].material.map.dispose();
                 this.scene.remove(g);
             });
             this.charGroups = [];
+            this.params.decodeIdx = -1; // 切換行數時重置解碼狀態
 
             const layers = [
                 { n: 'F', z: -800, sz: 60, m: 2.0 },
@@ -147,9 +139,8 @@
 
             layers.forEach(l => {
                 const rows = Math.max(1, Math.floor(this.params.midRows * l.m));
-                // 核心修正：動態計算 X 間距，確保不超出螢幕 (螢幕寬度約 1200 單位)
-                const totalWidth = window.innerWidth * (1 + Math.abs(l.z)/1000); 
-                const spacing = Math.min(totalWidth / rows, l.sz * 1.5);
+                const totalWidth = window.innerWidth * (1 + Math.abs(l.z)/1000) * 0.9; 
+                const spacing = totalWidth / rows;
 
                 for (let r = 0; r < rows; r++) {
                     const g = new THREE.Group();
@@ -168,21 +159,27 @@
             const now = Date.now();
             const time = now * 0.001 * this.params.speed;
 
-            if (now - this.params.lastDecodeTime > this.params.decodeInterval) {
-                const pool = this.charGroups.filter(g => !g.userData.isD && g.userData.l.n !== 'F' && Math.abs(g.position.y) < 800);
-                if (pool.length > 0 && this.params.decodeMessage) {
-                    const t = pool[Math.floor(Math.random()*pool.length)];
-                    t.children[0].material.map.dispose();
-                    t.children[0].material.map = this._createTex(this.params.decodeMessage[this.params.decodeIdx], t.userData.l.n==='N', true);
-                    t.userData.isD = true;
-                    this.params.decodeIdx = (this.params.decodeIdx + 1) % this.params.decodeMessage.length;
-                    this.params.lastDecodeTime = now;
+            // 逐字解碼邏輯
+            if (this.params.decodeIdx >= 0 && this.params.decodeIdx < this.params.decodeMsg.length) {
+                if (now - this.params.lastDecodeTime > 200) {
+                    // 尋找當前螢幕中還沒被解碼的中、近層文字
+                    const pool = this.charGroups.filter(g => !g.userData.isD && g.userData.l.n !== 'F' && Math.abs(g.position.y) < 800);
+                    if (pool.length > 0) {
+                        const t = pool[Math.floor(Math.random()*pool.length)];
+                        t.children[0].material.map.dispose();
+                        t.children[0].material.map = this._createTex(this.params.decodeMsg[this.params.decodeIdx], t.userData.l.n==='N', true);
+                        t.userData.isD = true;
+                        this.params.decodeIdx++;
+                        this.params.lastDecodeTime = now;
+                    }
                 }
             }
 
             this.charGroups.forEach(g => {
                 const p = (time * g.userData.l.m * g.userData.spd + g.userData.off) % 6;
                 g.position.y = 1500 - p * 600;
+                
+                // 掉出底部的字還原為綠色隨機字
                 if (g.position.y < -1100 && g.userData.isD) {
                     g.userData.isD = false;
                     const rc = this.params.chars[Math.floor(Math.random()*this.params.chars.length)];
@@ -194,15 +191,15 @@
             requestAnimationFrame(() => this._animate());
         }
 
-        async startCamera() {
+        async startCam() {
             try {
                 const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-                const v = document.getElementById('bg-video');
-                v.srcObject = s; v.style.display = 'block';
-            } catch(e) { alert("請授權相機並使用 HTTPS"); }
+                document.getElementById('bg-video').srcObject = s;
+                document.getElementById('bg-video').style.display = 'block';
+            } catch(e) { alert("請確保使用 HTTPS 環境"); }
         }
     }
-    new MatrixARModule();
+    new MatrixCracker();
 </script>
 </body>
 </html>
