@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Matrix AR - Row Fix</title>
+    <title>Matrix AR - Ultimate Fix</title>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@900&display=swap" rel="stylesheet">
     <style>
         body { margin: 0; background: #000; overflow: hidden; touch-action: none; font-family: sans-serif; height: 100vh; width: 100vw; }
@@ -13,19 +13,20 @@
         
         #app-ui { 
             position: absolute; bottom: 0; left: 0; width: 100%; z-index: 100; 
-            background: rgba(0,0,0,0.85); backdrop-filter: blur(20px); 
+            background: rgba(0,0,0,0.9); backdrop-filter: blur(25px); 
             border-top: 2px solid #00ff41; padding-bottom: env(safe-area-inset-bottom);
-            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: transform 0.3s ease-in-out;
+            pointer-events: auto;
         }
-        #app-ui.hidden { transform: translateY(105%); }
+        #app-ui.hidden { transform: translateY(110%); }
 
-        .ui-content { padding: 12px 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
-        .ui-row { width: 92%; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-        .btn { flex: 1; height: 44px; background: #111; border: 1px solid #00ff41; border-radius: 6px; color: #00ff41; font-weight: bold; font-size: 11px; }
-        input[type="text"] { background: #000; border: 1px solid #00ff41; color: #fff; padding: 8px; border-radius: 6px; flex: 1.2; font-size: 14px; outline: none; }
+        .ui-content { padding: 15px 0; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+        .ui-row { width: 92%; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+        .btn { flex: 1; height: 46px; background: #111; border: 1px solid #00ff41; border-radius: 8px; color: #00ff41; font-weight: bold; font-size: 12px; cursor: pointer; }
+        input[type="text"] { background: #000; border: 1px solid #00ff41; color: #fff; padding: 10px; border-radius: 8px; flex: 1.2; font-size: 14px; outline: none; }
         #decodeMessageInput { border-color: #ff4141; color: #ffcccc; }
-        .control-group { flex: 1; display: flex; flex-direction: column; gap: 2px; }
-        label { color: #00ff41; font-size: 9px; font-weight: bold; }
+        .control-group { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+        label { color: #00ff41; font-size: 10px; font-weight: bold; text-transform: uppercase; }
         input[type="range"] { width: 100%; accent-color: #00ff41; }
     </style>
 </head>
@@ -47,11 +48,11 @@
         </div>
         <div class="ui-row">
             <div class="control-group">
-                <label>MID ROWS 行數 (<span id="rowVal">12</span>)</label>
-                <input type="range" id="rowSlider" min="2" max="30" step="2" value="12">
+                <label>Rows 行數: <span id="rowVal">12</span></label>
+                <input type="range" id="rowSlider" min="2" max="40" step="2" value="12">
             </div>
             <div class="control-group">
-                <label>BASE SPEED 速度</label>
+                <label>Speed 速度</label>
                 <input type="range" id="speedSlider" min="1" max="10" step="0.5" value="4">
             </div>
         </div>
@@ -68,16 +69,16 @@
             try {
                 this.scene = new THREE.Scene();
                 this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+                this.renderer.setPixelRatio(window.devicePixelRatio);
                 this.renderer.setSize(window.innerWidth, window.innerHeight);
-                this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
                 document.getElementById('canvas-container').appendChild(this.renderer.domElement);
             } catch (e) {
-                document.body.innerHTML = `<div style="color:#0f4;padding:20px;">WebGL 初始化失敗</div>`;
+                alert("WebGL 初始化失敗");
                 return;
             }
 
             this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 5000);
-            this.camera.position.set(0, 0, 1000);
+            this.camera.position.z = 1000;
             
             this.params = { 
                 speed: 4.0, midRows: 12,
@@ -92,13 +93,21 @@
             this._bindUI();
             this.updateText();
             this._renderLoop();
+
             window.addEventListener('resize', () => this.onResize());
+            // 監聽全螢幕變化事件
+            document.addEventListener('fullscreenchange', () => this.onResize());
+            document.addEventListener('webkitfullscreenchange', () => this.onResize());
         }
 
         onResize() {
-            this.camera.aspect = window.innerWidth / window.innerHeight;
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+            this.camera.aspect = w / h;
             this.camera.updateProjectionMatrix();
-            this.renderer.setSize(window.innerWidth, window.innerHeight);
+            this.renderer.setSize(w, h);
+            // 重新計算位置，防止全螢幕後文字偏離
+            this.updateText();
         }
 
         _bindUI() {
@@ -110,30 +119,52 @@
             get('rowSlider').oninput = (e) => { 
                 this.params.midRows = parseInt(e.target.value); 
                 get('rowVal').innerText = this.params.midRows;
-                this.updateText(); // 這會觸發重新生成
+                this.updateText(); 
             };
+            
             get('setDecodeBtn').onclick = (e) => {
                 e.stopPropagation();
                 this.params.decodeMessage = get('decodeMessageInput').value;
                 this.params.decodeIdx = 0;
             };
+
             get('camBtn').onclick = (e) => { e.stopPropagation(); this.startCamera(); };
             
             get('fullScreenBtn').onclick = (e) => {
                 e.stopPropagation();
-                const el = document.documentElement;
-                const rfs = el.requestFullscreen || el.webkitRequestFullScreen || el.mozRequestFullScreen || el.msRequestFullscreen;
-                if (rfs) rfs.call(el).catch(() => {});
-                ui.classList.add('hidden');
+                this.toggleFullScreen();
             };
 
+            // 全螢幕喚醒邏輯：點擊畫面上半部隱藏，點擊下半部顯示
             document.getElementById('canvas-container').onclick = (e) => {
                 if (ui.classList.contains('hidden')) {
                     ui.classList.remove('hidden');
-                } else if (e.clientY < window.innerHeight * 0.6) {
-                    ui.classList.add('hidden');
+                } else {
+                    if (e.clientY < window.innerHeight * 0.55) {
+                        ui.classList.add('hidden');
+                    }
                 }
             };
+        }
+
+        toggleFullScreen() {
+            const doc = window.document;
+            const docEl = doc.documentElement;
+            const ui = document.getElementById('app-ui');
+
+            const request = docEl.requestFullscreen || docEl.webkitRequestFullScreen || docEl.mozRequestFullScreen || docEl.msRequestFullscreen;
+            const exit = doc.exitFullscreen || doc.webkitExitFullscreen || doc.mozCancelFullScreen || doc.msExitFullscreen;
+
+            if (!doc.fullscreenElement && !doc.webkitFullscreenElement && !doc.mozFullScreenElement && !doc.msFullscreenElement) {
+                if (request) {
+                    request.call(docEl);
+                    ui.classList.add('hidden');
+                }
+            } else {
+                if (exit) exit.call(doc);
+            }
+            // 延遲重繪確保尺寸正確
+            setTimeout(() => this.onResize(), 150);
         }
 
         _createCharTexture(char, layerName, isDecoding = false) {
@@ -149,7 +180,6 @@
         }
 
         updateText() {
-            // 1. 徹底清除舊物件避免記憶體洩漏與重疊
             this.charGroups.forEach(g => {
                 g.children.forEach(m => {
                     if (m.material.map) m.material.map.dispose();
@@ -159,19 +189,16 @@
                 this.scene.remove(g);
             });
             this.charGroups = [];
-            this.params.decodeIdx = 0; // 重置解碼順序
             
             const layers = [
-                { name: 'far',  z: -600, size: 50,  speed: 0.5, rowMult: 2.0 },
+                { name: 'far',  z: -800, size: 50,  speed: 0.5, rowMult: 2.5 },
                 { name: 'mid',  z: 0,    size: 80,  speed: 1.0, rowMult: 1.0 },
-                { name: 'near', z: 400,  size: 110, speed: 1.8, rowMult: 0.5 }
+                { name: 'near', z: 450,  size: 110, speed: 1.8, rowMult: 0.6 }
             ];
 
             layers.forEach(layer => {
-                // 根據 params.midRows 即時計算該層行數
                 const finalRows = Math.max(1, Math.floor(this.params.midRows * layer.rowMult));
-                // 根據行數動態調整間距
-                const xSpread = layer.name === 'near' ? 250 : (layer.name === 'mid' ? 160 : 90);
+                const xSpread = layer.name === 'near' ? 280 : (layer.name === 'mid' ? 180 : 100);
 
                 for (let r = 0; r < finalRows; r++) {
                     const g = new THREE.Group();
@@ -181,18 +208,10 @@
                         new THREE.MeshBasicMaterial({ map: this._createCharTexture(rc, layer.name, false), transparent: true })
                     );
                     g.add(m);
+                    g.userData = { layer, randOffset: Math.random() * 20000, speedVar: 0.8 + Math.random() * 0.4, isDecoding: false };
                     
-                    g.userData = { 
-                        layer, 
-                        randOffset: Math.random() * 20000, 
-                        speedVar: 0.8 + Math.random() * 0.4, 
-                        isDecoding: false 
-                    };
-                    
-                    // 置中計算：讓整排文字水平置中
                     const xPos = (r - (finalRows - 1) / 2) * xSpread;
                     g.position.set(xPos, 2000, layer.z);
-                    
                     this.scene.add(g);
                     this.charGroups.push(g);
                 }
@@ -203,9 +222,8 @@
             const now = Date.now();
             const time = now * 0.001 * this.params.speed;
             
-            // 解碼邏輯
             if (now - this.params.lastDecodeTime > this.params.decodeInterval) {
-                const candidates = this.charGroups.filter(g => !g.userData.isDecoding && g.position.y < 800 && g.position.y > -800 && g.userData.layer.name !== 'far');
+                const candidates = this.charGroups.filter(g => !g.userData.isDecoding && g.position.y < 900 && g.position.y > -900 && g.userData.layer.name !== 'far');
                 if (candidates.length > 0 && this.params.decodeMessage.length > 0) {
                     const target = candidates[Math.floor(Math.random() * candidates.length)];
                     target.children[0].material.map.dispose();
@@ -218,12 +236,10 @@
 
             this.charGroups.forEach((g) => {
                 const { layer, randOffset, speedVar } = g.userData;
-                // 根據進度移動 Y 軸
                 let progress = (time * layer.speed * speedVar + randOffset * 0.001) % 6.0;
-                g.position.y = 1500 - (progress * 600);
+                g.position.y = 1600 - (progress * 650);
                 
-                // 掉出螢幕重設為綠色隨機字
-                if (g.position.y < -1000 && g.userData.isDecoding) {
+                if (g.position.y < -1100 && g.userData.isDecoding) {
                     g.userData.isDecoding = false;
                     const rc = this.params.matrixChars[Math.floor(Math.random() * this.params.matrixChars.length)];
                     g.children[0].material.map.dispose();
@@ -242,8 +258,10 @@
             try {
                 const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
                 const v = document.getElementById('bg-video');
-                v.srcObject = s; v.style.display = 'block';
-            } catch(e) { alert("請確保使用 HTTPS 開啟鏡頭。"); }
+                v.srcObject = s; 
+                v.onloadedmetadata = () => v.play();
+                v.style.display = 'block';
+            } catch(e) { alert("鏡頭啟動失敗，請確認使用 HTTPS 環境。"); }
         }
     }
 
