@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Matrix AR - Clean Version</title>
+    <title>Matrix AR - Row Fix</title>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@900&display=swap" rel="stylesheet">
     <style>
         body { margin: 0; background: #000; overflow: hidden; touch-action: none; font-family: sans-serif; height: 100vh; width: 100vw; }
@@ -48,7 +48,7 @@
         <div class="ui-row">
             <div class="control-group">
                 <label>MID ROWS 行數 (<span id="rowVal">12</span>)</label>
-                <input type="range" id="rowSlider" min="4" max="24" step="2" value="12">
+                <input type="range" id="rowSlider" min="2" max="30" step="2" value="12">
             </div>
             <div class="control-group">
                 <label>BASE SPEED 速度</label>
@@ -72,7 +72,7 @@
                 this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
                 document.getElementById('canvas-container').appendChild(this.renderer.domElement);
             } catch (e) {
-                document.body.innerHTML = `<div style="color:#0f4;padding:20px;">WebGL 初始化失敗，請檢查瀏覽器相容性。</div>`;
+                document.body.innerHTML = `<div style="color:#0f4;padding:20px;">WebGL 初始化失敗</div>`;
                 return;
             }
 
@@ -110,7 +110,7 @@
             get('rowSlider').oninput = (e) => { 
                 this.params.midRows = parseInt(e.target.value); 
                 get('rowVal').innerText = this.params.midRows;
-                this.updateText(); 
+                this.updateText(); // 這會觸發重新生成
             };
             get('setDecodeBtn').onclick = (e) => {
                 e.stopPropagation();
@@ -149,15 +149,17 @@
         }
 
         updateText() {
+            // 1. 徹底清除舊物件避免記憶體洩漏與重疊
             this.charGroups.forEach(g => {
                 g.children.forEach(m => {
-                    m.material.map.dispose();
+                    if (m.material.map) m.material.map.dispose();
                     m.geometry.dispose();
                     m.material.dispose();
                 });
                 this.scene.remove(g);
             });
             this.charGroups = [];
+            this.params.decodeIdx = 0; // 重置解碼順序
             
             const layers = [
                 { name: 'far',  z: -600, size: 50,  speed: 0.5, rowMult: 2.0 },
@@ -166,15 +168,31 @@
             ];
 
             layers.forEach(layer => {
+                // 根據 params.midRows 即時計算該層行數
                 const finalRows = Math.max(1, Math.floor(this.params.midRows * layer.rowMult));
+                // 根據行數動態調整間距
+                const xSpread = layer.name === 'near' ? 250 : (layer.name === 'mid' ? 160 : 90);
+
                 for (let r = 0; r < finalRows; r++) {
                     const g = new THREE.Group();
                     const rc = this.params.matrixChars[Math.floor(Math.random() * this.params.matrixChars.length)];
-                    const m = new THREE.Mesh(new THREE.PlaneGeometry(layer.size, layer.size), new THREE.MeshBasicMaterial({ map: this._createCharTexture(rc, layer.name, false), transparent: true }));
+                    const m = new THREE.Mesh(
+                        new THREE.PlaneGeometry(layer.size, layer.size), 
+                        new THREE.MeshBasicMaterial({ map: this._createCharTexture(rc, layer.name, false), transparent: true })
+                    );
                     g.add(m);
-                    g.userData = { layer, randOffset: Math.random() * 20000, speedVar: 0.8 + Math.random() * 0.4, isDecoding: false };
-                    const xSpread = layer.name === 'near' ? 250 : (layer.name === 'mid' ? 160 : 90);
-                    g.position.set((r - (finalRows - 1) / 2) * xSpread, 2000, layer.z);
+                    
+                    g.userData = { 
+                        layer, 
+                        randOffset: Math.random() * 20000, 
+                        speedVar: 0.8 + Math.random() * 0.4, 
+                        isDecoding: false 
+                    };
+                    
+                    // 置中計算：讓整排文字水平置中
+                    const xPos = (r - (finalRows - 1) / 2) * xSpread;
+                    g.position.set(xPos, 2000, layer.z);
+                    
                     this.scene.add(g);
                     this.charGroups.push(g);
                 }
@@ -185,6 +203,7 @@
             const now = Date.now();
             const time = now * 0.001 * this.params.speed;
             
+            // 解碼邏輯
             if (now - this.params.lastDecodeTime > this.params.decodeInterval) {
                 const candidates = this.charGroups.filter(g => !g.userData.isDecoding && g.position.y < 800 && g.position.y > -800 && g.userData.layer.name !== 'far');
                 if (candidates.length > 0 && this.params.decodeMessage.length > 0) {
@@ -199,11 +218,15 @@
 
             this.charGroups.forEach((g) => {
                 const { layer, randOffset, speedVar } = g.userData;
+                // 根據進度移動 Y 軸
                 let progress = (time * layer.speed * speedVar + randOffset * 0.001) % 6.0;
                 g.position.y = 1500 - (progress * 600);
+                
+                // 掉出螢幕重設為綠色隨機字
                 if (g.position.y < -1000 && g.userData.isDecoding) {
                     g.userData.isDecoding = false;
                     const rc = this.params.matrixChars[Math.floor(Math.random() * this.params.matrixChars.length)];
+                    g.children[0].material.map.dispose();
                     g.children[0].material.map = this._createCharTexture(rc, layer.name, false);
                 }
             });
@@ -220,7 +243,7 @@
                 const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
                 const v = document.getElementById('bg-video');
                 v.srcObject = s; v.style.display = 'block';
-            } catch(e) { alert("請確保使用 HTTPS 並授權相機權限。"); }
+            } catch(e) { alert("請確保使用 HTTPS 開啟鏡頭。"); }
         }
     }
 
