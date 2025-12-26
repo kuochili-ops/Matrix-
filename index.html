@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Matrix AR Cracker</title>
+    <title>Matrix AR Pro - Full Spread</title>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@900&display=swap" rel="stylesheet">
     <style>
         body { margin: 0; background: #000; overflow: hidden; touch-action: none; font-family: sans-serif; height: 100vh; }
@@ -17,8 +17,8 @@
             transition: transform 0.3s ease;
         }
         #app-ui.hidden { transform: translateY(110%); }
-        .ui-content { padding: 15px 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
-        .ui-row { width: 90%; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+        .ui-content { padding: 12px 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+        .ui-row { width: 92%; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
         .btn { flex: 1; height: 44px; background: #111; border: 1px solid #0f4; border-radius: 6px; color: #0f4; font-weight: bold; font-size: 12px; }
         input[type="text"] { background: #000; border: 1px solid #f44; color: #fff; padding: 10px; border-radius: 6px; flex: 1; font-size: 16px; outline: none; }
         .control-group { flex: 1; display: flex; flex-direction: column; }
@@ -37,15 +37,21 @@
     <div class="ui-content">
         <div class="ui-row">
             <input type="text" id="decodeInput" value="郭白六是可愛的小朋友">
-            <button class="btn" id="decodeBtn" style="border-color:#f44; color:#f44; flex: 0.4;">⚡ 破解</button>
+            <button class="btn" id="decodeBtn" style="border-color:#f44; color:#f44; flex: 0.3;">⚡ 破解</button>
+        </div>
+        <div class="ui-row">
+            <div class="control-group">
+                <label>Rows 行數: <span id="rowVal">12</span></label>
+                <input type="range" id="rowSlider" min="4" max="60" step="2" value="12">
+            </div>
+            <div class="control-group">
+                <label>Speed 速度</label>
+                <input type="range" id="speedSlider" min="1" max="15" step="0.5" value="4">
+            </div>
         </div>
         <div class="ui-row">
             <button class="btn" id="fullScreenBtn">🔲 隱藏介面</button>
             <button class="btn" id="camBtn">📷 鏡頭</button>
-            <div class="control-group">
-                <label>Rows: <span id="rowVal">12</span></label>
-                <input type="range" id="rowSlider" min="4" max="60" step="2" value="12">
-            </div>
         </div>
     </div>
 </div>
@@ -70,7 +76,7 @@
                 speed: 4, 
                 midRows: 12, 
                 decodeMsg: "", 
-                decodeIdx: -1, // -1 表示未開始解碼
+                decodeIdx: -1, 
                 lastDecodeTime: 0, 
                 chars: "虚実数解空間01ホUNKOWN" 
             };
@@ -99,9 +105,13 @@
                 this.updateRows(); 
             };
             
+            get('speedSlider').oninput = (e) => {
+                this.params.speed = parseFloat(e.target.value);
+            };
+            
             get('decodeBtn').onclick = () => {
                 this.params.decodeMsg = get('decodeInput').value;
-                this.params.decodeIdx = 0; // 開始解碼流程
+                this.params.decodeIdx = 0; 
             };
 
             get('camBtn').onclick = () => this.startCam();
@@ -129,17 +139,17 @@
                 this.scene.remove(g);
             });
             this.charGroups = [];
-            this.params.decodeIdx = -1; // 切換行數時重置解碼狀態
 
             const layers = [
-                { n: 'F', z: -800, sz: 60, m: 2.0 },
-                { n: 'M', z: 0,    sz: 90, m: 1.0 },
-                { n: 'N', z: 450,  sz: 130,m: 0.6 }
+                { n: 'F', z: -900, sz: 60, m: 2.5, spreadX: 1.8 }, // 後層更廣、行數更多
+                { n: 'M', z: 0,    sz: 90, m: 1.0, spreadX: 1.2 }, 
+                { n: 'N', z: 450,  sz: 130,m: 0.6, spreadX: 1.0 }
             ];
 
             layers.forEach(l => {
                 const rows = Math.max(1, Math.floor(this.params.midRows * l.m));
-                const totalWidth = window.innerWidth * (1 + Math.abs(l.z)/1000) * 0.9; 
+                // 根據層級與 spreadX 推開左右距離
+                const totalWidth = window.innerWidth * (1 + Math.abs(l.z)/1000) * l.spreadX; 
                 const spacing = totalWidth / rows;
 
                 for (let r = 0; r < rows; r++) {
@@ -148,7 +158,10 @@
                     const m = new THREE.Mesh(new THREE.PlaneGeometry(l.sz, l.sz), new THREE.MeshBasicMaterial({ map: this._createTex(rc, l.n==='N', false), transparent: true }));
                     g.add(m);
                     g.userData = { l, off: Math.random()*1000, spd: 0.8+Math.random()*0.4, isD: false };
-                    g.position.set((r - (rows - 1)/2) * spacing, 2000, l.z);
+                    
+                    // 水平排列並加上隨機的小偏移讓畫面更自然
+                    const xPos = (r - (rows - 1)/2) * spacing + (Math.random()-0.5)*20;
+                    g.position.set(xPos, 2000, l.z);
                     this.scene.add(g);
                     this.charGroups.push(g);
                 }
@@ -159,10 +172,8 @@
             const now = Date.now();
             const time = now * 0.001 * this.params.speed;
 
-            // 逐字解碼邏輯
             if (this.params.decodeIdx >= 0 && this.params.decodeIdx < this.params.decodeMsg.length) {
                 if (now - this.params.lastDecodeTime > 200) {
-                    // 尋找當前螢幕中還沒被解碼的中、近層文字
                     const pool = this.charGroups.filter(g => !g.userData.isD && g.userData.l.n !== 'F' && Math.abs(g.position.y) < 800);
                     if (pool.length > 0) {
                         const t = pool[Math.floor(Math.random()*pool.length)];
@@ -179,7 +190,6 @@
                 const p = (time * g.userData.l.m * g.userData.spd + g.userData.off) % 6;
                 g.position.y = 1500 - p * 600;
                 
-                // 掉出底部的字還原為綠色隨機字
                 if (g.position.y < -1100 && g.userData.isD) {
                     g.userData.isD = false;
                     const rc = this.params.chars[Math.floor(Math.random()*this.params.chars.length)];
@@ -196,7 +206,7 @@
                 const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
                 document.getElementById('bg-video').srcObject = s;
                 document.getElementById('bg-video').style.display = 'block';
-            } catch(e) { alert("請確保使用 HTTPS 環境"); }
+            } catch(e) { alert("請確保使用 HTTPS 並授權相機權限"); }
         }
     }
     new MatrixCracker();
