@@ -1,0 +1,25 @@
+<script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
+
+<a-scene embedded arjs>
+  <a-entity id="matrix-rain" position="0 0 -3"></a-entity>
+  
+  <a-camera-static />
+</a-scene>
+
+<script>
+  // 網頁版 FlipBoard 邏輯
+  const charSet = "田中大一水火木金土上下左右";
+  const rainContainer = document.querySelector('#matrix-rain');
+
+  function createDrop() {
+    const el = document.createElement('a-text');
+    el.setAttribute('value', charSet[Math.floor(Math.random()*charSet.length)]);
+    el.setAttribute('color', '#00FF41');
+    el.setAttribute('position', {x: (Math.random()-0.5)*10, y: 5, z: 0});
+    
+    // 網頁動畫：垂直掉落
+    el.setAttribute('animation', 'property: position; to: 0 -5 0; dur: 3000; easing: linear; loop: true');
+    
+    rainContainer.appendChild(el);
+  }
+</script>
